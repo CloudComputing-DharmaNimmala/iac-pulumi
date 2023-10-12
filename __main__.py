@@ -34,12 +34,12 @@ for config in public_subnet_config:
     subnet = ec2.Subnet(config["name"],
         vpc_id=b_vpc.id,
         cidr_block=config["cidr_block"],
-        availability_zone=config["availability_zone"],  # Change the AZ as needed
+        availability_zone=config["availability_zone"],
         tags={
             "Name": config["name"],
         })
     public_subnets.append(subnet)
-print(public_subnets)
+
 
 # creating private subnets
 private_subnets = []
@@ -52,7 +52,7 @@ for config in private_subnet_config:
             "Name": config["name"],
         })
     private_subnets.append(subnet)
-print(private_subnets)
+
 
 # Create a public route table and associate it with public subnets
 public_route_table = ec2.RouteTable('public_route_table',
