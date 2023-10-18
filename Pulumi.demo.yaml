@@ -1,7 +1,7 @@
 encryptionsalt: v1:2IUxPKWhvfo=:v1:vERjjMvSFi5QeiPM:N1Xte+exka53IhAWCXNw6trp3mPiow==
 config:
   aws:profile: demo
-  aws:region: us-east-1
+  aws:region: us-west-1
   main_vpc_cider_block: 10.0.0.0/16
   main_vpc_name: main-vpc
   main_igw_name: main-igw
@@ -23,6 +23,6 @@ config:
   https_cidr_block: ["0.0.0.0/0"]
   app_port_cidr_block: ["0.0.0.0/0"]
   app_port: 3000
-  key_name: "app-key"
-  my_ami_id: "ami-02c9268d3228230fd"
+  key_name: "demo-west1"
+  my_ami_id: "ami-02de92b3351f3f8b0"
   instance_type: "t2.micro"
