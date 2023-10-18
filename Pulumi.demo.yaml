@@ -6,15 +6,23 @@ config:
   main_vpc_name: main-vpc
   main_igw_name: main-igw
   public_subnet_configs : [
-    {"name": "public-subnet-1", "cidr_block": "10.0.0.0/24", "availability_zone": "us-east-1a"},
-    {"name": "public-subnet-2", "cidr_block": "10.0.1.0/24", "availability_zone": "us-east-1b"},
-    {"name": "public-subnet-3", "cidr_block": "10.0.2.0/24", "availability_zone": "us-east-1c"},
+    {"name": "public-subnet-1", "cidr_block": "10.0.0.0/24"},
+    {"name": "public-subnet-2", "cidr_block": "10.0.1.0/24"},
+    {"name": "public-subnet-3", "cidr_block": "10.0.2.0/24"},
     ]
   private_subnet_configs: [
-    {"name": "private-subnet-1", "cidr_block": "10.0.3.0/24", "availability_zone": "us-east-1a"},
-    {"name": "private-subnet-2", "cidr_block": "10.0.4.0/24", "availability_zone": "us-east-1b"},
-    {"name": "private-subnet-3", "cidr_block": "10.0.5.0/24", "availability_zone": "us-east-1c"},
+    {"name": "private-subnet-1", "cidr_block": "10.0.3.0/24"},
+    {"name": "private-subnet-2", "cidr_block": "10.0.4.0/24"},
+    {"name": "private-subnet-3", "cidr_block": "10.0.5.0/24"},
   ]
   public_route_table_name: public-route-table
   private_route_table_name: private-route-table
-  destination_cidr: 0.0.0.0/0
+  destination_cidr: "0.0.0.0/0"
+  ssh_cidr_block: ["73.218.147.89/32"]
+  http_cidr_block: ["0.0.0.0/0"]
+  https_cidr_block: ["0.0.0.0/0"]
+  app_port_cidr_block: ["0.0.0.0/0"]
+  app_port: 3000
+  key_name: "app-key"
+  my_ami_id: "ami-02c9268d3228230fd"
+  instance_type: "t2.micro"
