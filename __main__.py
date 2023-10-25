@@ -19,6 +19,15 @@ app_port = config.require_object('app_port')
 key_name = config.require('key_name')
 my_ami_id = config.require('my_ami_id')
 my_instance_type = config.require('instance_type')
+identifier = config.require('identifier')
+username = config.require('username')
+password = config.require('password')
+allocated_storage = config.require('allocated_storage')
+db_name = config.require('db_name')
+engine = config.require('engine')
+engine_version = config.require('engine_version')
+instance_class = config.require('instance_class')
+env_file_path = config.require('env_file_path')
 
 #creating VPC
 b_vpc = ec2.Vpc('main_vpc', 
@@ -185,15 +194,15 @@ rds_subnet_group = aws.rds.SubnetGroup("rds_subnet_group",
 
 # create rds instance
 rds_instance = aws.rds.Instance("rds_instance",
-    identifier="csye6225",
+    identifier=identifier,
     multi_az=False,
-    username="csye6225",
-    password="password",
-    allocated_storage=10,
-    db_name="csye6225",
-    engine="mariadb",
-    engine_version="10.6",
-    instance_class="db.t2.micro",
+    username=username,
+    password=password,
+    allocated_storage=allocated_storage,
+    db_name=db_name,
+    engine=engine,
+    engine_version=engine_version,
+    instance_class=instance_class,
     parameter_group_name=db_parameter_group.name,
     skip_final_snapshot=True,
     db_subnet_group_name=rds_subnet_group.name,
@@ -221,21 +230,19 @@ ec2_instance = ec2.Instance(
     user_data=pulumi.Output.all(endpoint=rds_instance.endpoint
     ).apply(
         lambda args: f"""#!/bin/bash
-export RDS_ENDPOINT={args["endpoint"].split(":")[0]}
-export DB_USER=csye6225
-export DB_PASSWORD=password
-export DB_DIALECT=mysql
-export DB_NAME=csye6225
-export PORT=3000
-export CSV_FILE=/opt/user.csv
+NEW_DB_USER={username}
+NEW_DB_PASSWORD={password}
+NEW_DB_HOST={args["endpoint"].split(":")[0]}
+NEW_DB_NAME={db_name}
+ENV_FILE_PATH={env_file_path}
 
-cat <<EOF > /home/admin/webapp/.env
-DB_HOST=$RDS_ENDPOINT
-DB_USER=$DB_USER
-DB_PASSWORD=$DB_PASSWORD
-PORT=$PORT
-DB_DIALECT=$DB_DIALECT
-DB_NAME=$DB_NAME
-CSV_FILE=$CSV_FILE
-EOF"""),
+if [ -e "$ENV_FILE_PATH" ]; then
+sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
+-e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
+-e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
+-e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
+"$ENV_FILE_PATH"
+else
+echo "$ENV_FILE_PATH not found."
+fi"""),
 )
