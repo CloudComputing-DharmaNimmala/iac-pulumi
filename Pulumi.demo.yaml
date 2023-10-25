@@ -24,6 +24,15 @@ config:
   app_port_cidr_block: ["0.0.0.0/0"]
   app_port: 3000
   key_name: "dev-us-west1"
-  my_ami_id: "ami-0b3871c48c4a48a14"
+  my_ami_id: "ami-01121e09e04ee00c6"
   instance_type: "t2.micro"
   egress_traffic: "0.0.0.0/0"
+  identifier: "csye6225"
+  username: "csye6225"
+  password: "password"
+  allocated_storage: 20
+  db_name: "csye6225"
+  engine: "mariadb"
+  engine_version: "10.6"
+  instance_class: "db.t2.micro"
+  env_file_path : "/opt/csye6225/webapp/.env"
