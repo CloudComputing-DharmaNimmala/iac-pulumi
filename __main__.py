@@ -132,20 +132,79 @@ web_app_security_group = ec2.SecurityGroup('web-app-sg',
             'cidr_blocks': app_port_cidr_block,  # Your application's port from anywhere
         },
     ],
+    egress=[
+        {
+            'protocol': "-1",  
+            'from_port': 0,
+            'to_port': 0, 
+            'cidr_blocks': ["0.0.0.0/0"],  
+        }
+    ],
     tags={
         "Name": "application security group"
     })
 
+#database security group
+database_security_group = ec2.SecurityGroup('database-sg',
+    description="Database Security Group",
+    vpc_id = b_vpc.id,
+    ingress=[
+        {
+            'protocol': 'tcp',
+            'from_port': 3306,
+            'to_port': 3306,
+            'security_groups': [web_app_security_group.id]
+        },
+    ],
+    tags={
+        "Name": "database security group"
+    })
 
-# Create EC2
-# Define your custom AMI (replace with your actual AMI ID)
-custom_ami = my_ami_id
+#create rds parameter group
+db_parameter_group = aws.rds.ParameterGroup("mariadb_parameter_group",
+    family="mariadb10.6",
+    parameters=[
+        aws.rds.ParameterGroupParameterArgs(
+            name="max_user_connections",
+            value=100,
+            apply_method="pending-reboot"
+        ),
+    ],
+    name="parametergroup",
+    description="parameter_group"
+    )
 
+# create a subnet group
+rds_subnet_group = aws.rds.SubnetGroup("rds_subnet_group",
+    subnet_ids=[subnet.id for subnet in private_subnets],
+    tags={
+        "Name": "My RDS subnet group",
+    })
+
+
+
+# create rds instance
+rds_instance = aws.rds.Instance("rds_instance",
+    identifier="csye6225",
+    multi_az=False,
+    username="csye6225",
+    password="password",
+    allocated_storage=10,
+    db_name="csye6225",
+    engine="mariadb",
+    engine_version="10.6",
+    instance_class="db.t2.micro",
+    parameter_group_name=db_parameter_group.name,
+    skip_final_snapshot=True,
+    db_subnet_group_name=rds_subnet_group.name,
+    publicly_accessible=False,
+    vpc_security_group_ids=[database_security_group.id]
+    )
 
 # Create an EC2 instance
 ec2_instance = ec2.Instance(
     "My-Ami-Instance",
-    ami=custom_ami,
+    ami=my_ami_id,
     instance_type=my_instance_type,  # Choose the appropriate instance type
     subnet_id=public_subnets[0].id,  # Replace with the desired subnet ID
     security_groups=[web_app_security_group.id],  # Attach the security group
@@ -153,10 +212,30 @@ ec2_instance = ec2.Instance(
     key_name=key_name,
     root_block_device={
         "volume_size": 25,
-        "volume_type": "gp2",  # General Purpose SSD (GP2)
+        "volume_type": "gp2",  
         "delete_on_termination": True,
     },
     tags={
         "Name": "my-ami-instance",  # Provide a name for your instance
     },
+    user_data=pulumi.Output.all(endpoint=rds_instance.endpoint
+    ).apply(
+        lambda args: f"""#!/bin/bash
+export RDS_ENDPOINT={args["endpoint"].split(":")[0]}
+export DB_USER=csye6225
+export DB_PASSWORD=password
+export DB_DIALECT=mysql
+export DB_NAME=csye6225
+export PORT=3000
+export CSV_FILE=/opt/user.csv
+
+cat <<EOF > /home/admin/webapp/.env
+DB_HOST=$RDS_ENDPOINT
+DB_USER=$DB_USER
+DB_PASSWORD=$DB_PASSWORD
+PORT=$PORT
+DB_DIALECT=$DB_DIALECT
+DB_NAME=$DB_NAME
+CSV_FILE=$CSV_FILE
+EOF"""),
 )
