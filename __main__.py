@@ -210,6 +210,31 @@ rds_instance = aws.rds.Instance("rds_instance",
     vpc_security_group_ids=[database_security_group.id]
     )
 
+# Create an IAM role
+cloudwatch_agent_server_role = aws.iam.Role(
+    "cloudwatch-agent-server-role",
+    assume_role_policy="""{
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "ec2.amazonaws.com"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }""",
+)
+
+# Attach the CloudWatchAgentServerPolicy
+cloudwatch_agent_server_policy_attachment = aws.iam.PolicyAttachment(
+    "cloudwatch-agent-server-policy-attachment",
+    policy_arn="arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+    roles=[cloudwatch_agent_server_role.name],
+)
+
+test_profile = aws.iam.InstanceProfile("testProfile", role=cloudwatch_agent_server_role.name)
 # Create an EC2 instance
 ec2_instance = ec2.Instance(
     "My-Ami-Instance",
@@ -219,6 +244,7 @@ ec2_instance = ec2.Instance(
     security_groups=[web_app_security_group.id],  # Attach the security group
     associate_public_ip_address=True,
     key_name=key_name,
+    iam_instance_profile = test_profile.name,
     root_block_device={
         "volume_size": 25,
         "volume_type": "gp2",  
@@ -244,5 +270,20 @@ sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
 "$ENV_FILE_PATH"
 else
 echo "$ENV_FILE_PATH not found."
-fi"""),
+fi
+
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+-a fetch-config \
+-m ec2 \
+-c file:/opt/csye6225/webapp/cloudwatch-config.json \
+-s
+sudo systemctl restart amazon-cloudwatch-agent"""),
 )
+
+www = aws.route53.Record("www",
+    zone_id="Z10302201POPYII3KMF2G",
+    name="demo.mynscc.me",
+    type="A",
+    ttl=60,
+    records=[ec2_instance.public_ip])
+

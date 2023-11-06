@@ -1,6 +1,6 @@
 encryptionsalt: v1:A3Pah0qCaqo=:v1:wo7YPdqDBJZ6Q7GY:5KRgngsP4W4EMcv++NN5HnKTBD5p6w==
 config:
-  aws:profile: dev
+  aws:profile: demo
   aws:region: us-west-1
   main_vpc_cider_block: 10.0.0.0/16
   main_vpc_name: main-vpc
@@ -23,8 +23,8 @@ config:
   https_cidr_block: ["0.0.0.0/0"]
   app_port_cidr_block: ["0.0.0.0/0"]
   app_port: 3000
-  key_name: "dev-us-west1"
-  my_ami_id: "ami-01121e09e04ee00c6"
+  key_name: "demo-west1"
+  my_ami_id: "ami-0e39d6fd24b6a50ce"
   instance_type: "t2.micro"
   egress_traffic: "0.0.0.0/0"
   identifier: "csye6225"
