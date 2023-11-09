@@ -24,7 +24,7 @@ config:
   app_port_cidr_block: ["0.0.0.0/0"]
   app_port: 3000
   key_name: "demo-west1"
-  my_ami_id: "ami-0e39d6fd24b6a50ce"
+  my_ami_id: "ami-0c4bb17162fe70ef1"
   instance_type: "t2.micro"
   egress_traffic: "0.0.0.0/0"
   identifier: "csye6225"
@@ -36,3 +36,5 @@ config:
   engine_version: "10.6"
   instance_class: "db.t2.micro"
   env_file_path : "/opt/csye6225/webapp/.env"
+  zone_id : "Z10302201POPYII3KMF2G"
+  domain_name : "demo.mynscc.me"

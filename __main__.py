@@ -28,6 +28,8 @@ engine = config.require('engine')
 engine_version = config.require('engine_version')
 instance_class = config.require('instance_class')
 env_file_path = config.require('env_file_path')
+zone_id = config.require('zone_id')
+domain_name = config.require('domain_name')
 
 #creating VPC
 b_vpc = ec2.Vpc('main_vpc', 
@@ -281,8 +283,8 @@ sudo systemctl restart amazon-cloudwatch-agent"""),
 )
 
 www = aws.route53.Record("www",
-    zone_id="Z10302201POPYII3KMF2G",
-    name="demo.mynscc.me",
+    zone_id=zone_id,
+    name=domain_name,
     type="A",
     ttl=60,
     records=[ec2_instance.public_ip])
