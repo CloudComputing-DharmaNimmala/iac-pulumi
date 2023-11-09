@@ -36,3 +36,5 @@ config:
   engine_version: "10.6"
   instance_class: "db.t2.micro"
   env_file_path : "/opt/csye6225/webapp/.env"
+  zone_id : "Z04150102IC2RTE0VG6Y3"
+  domain_name : "dev.mynscc.me"
