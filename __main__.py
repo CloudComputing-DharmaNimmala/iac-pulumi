@@ -1,6 +1,7 @@
 import pulumi
 from pulumi_aws import ec2
 import pulumi_aws as aws
+import base64
  
 config = pulumi.Config()
 public_subnet_config =config.require_object('public_subnet_configs')
@@ -69,6 +70,7 @@ for i in range(num_of_azs):
                        })
     public_subnets.append(subnet)
 
+
 # Create private subnets in selected availability zones
 private_subnets = []
 for i in range(num_of_azs):
@@ -113,7 +115,37 @@ for n,subnet in enumerate(private_subnets):
                              route_table_id=private_route_table.id,
                              subnet_id=subnet.id)
     
-#security group
+#load-balancer security group
+load_balancer_security_group = ec2.SecurityGroup('load_balancer-sg',
+    description="Load Balancer Security Group",
+    vpc_id = b_vpc.id,
+    ingress=[
+        {
+            'protocol': 'tcp',
+            'from_port': 80,
+            'to_port': 80,
+            'cidr_blocks': http_cidr_block,
+        },
+        {
+            'protocol': 'tcp',
+            'from_port': 443,
+            'to_port': 443,
+            'cidr_blocks': http_cidr_block,
+        },
+    ],
+    egress=[
+        {
+            'protocol': "-1",
+            'from_port': 0,
+            'to_port': 0,
+            'cidr_blocks': ["0.0.0.0/0"]
+        }
+    ],
+    tags={
+        "Name": "load balancer security group"
+    })
+
+#webapp security group
 web_app_security_group = ec2.SecurityGroup('web-app-sg',
     description="Application Security Group",
     vpc_id = b_vpc.id,
@@ -122,25 +154,14 @@ web_app_security_group = ec2.SecurityGroup('web-app-sg',
             'protocol': 'tcp',
             'from_port': 22,
             'to_port': 22,
-            'cidr_blocks': ssh_cidr_block,  # SSH from my system
+            'cidr_blocks': ssh_cidr_block, 
         },
         {
             'protocol': 'tcp',
-            'from_port': 80,
-            'to_port': 80,
-            'cidr_blocks': http_cidr_block,  # HTTP from anywhere
-        },
-        {
-            'protocol': 'tcp',
-            'from_port': 443,
-            'to_port': 443,
-            'cidr_blocks': https_cidr_block,  # HTTPS from anywhere
-        },
-        {
-            'protocol': 'tcp',
-            'from_port': app_port,  # Replace with your application's port
-            'to_port': app_port,    # Replace with your application's port
-            'cidr_blocks': app_port_cidr_block,  # Your application's port from anywhere
+            'from_port': app_port,  
+            'to_port': app_port,    
+            'security_groups': [load_balancer_security_group.id]
+
         },
     ],
     egress=[
@@ -170,6 +191,7 @@ database_security_group = ec2.SecurityGroup('database-sg',
     tags={
         "Name": "database security group"
     })
+
 
 #create rds parameter group
 db_parameter_group = aws.rds.ParameterGroup("mariadb_parameter_group",
@@ -237,55 +259,236 @@ cloudwatch_agent_server_policy_attachment = aws.iam.PolicyAttachment(
 )
 
 test_profile = aws.iam.InstanceProfile("testProfile", role=cloudwatch_agent_server_role.name)
-# Create an EC2 instance
-ec2_instance = ec2.Instance(
-    "My-Ami-Instance",
-    ami=my_ami_id,
-    instance_type=my_instance_type,  # Choose the appropriate instance type
-    subnet_id=public_subnets[0].id,  # Replace with the desired subnet ID
-    security_groups=[web_app_security_group.id],  # Attach the security group
-    associate_public_ip_address=True,
-    key_name=key_name,
-    iam_instance_profile = test_profile.name,
-    root_block_device={
-        "volume_size": 25,
-        "volume_type": "gp2",  
-        "delete_on_termination": True,
-    },
+
+# user_data = pulumi.Output.all(endpoint=rds_instance.endpoint
+#     ).apply(
+#         lambda args: f"""#!/bin/bash
+#     NEW_DB_USER={username}
+#     NEW_DB_PASSWORD={password}
+#     NEW_DB_HOST={args["endpoint"].split(":")[0]}
+#     NEW_DB_NAME={db_name}
+#     ENV_FILE_PATH={env_file_path}
+
+#     if [ -e "$ENV_FILE_PATH" ]; then
+#     sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
+#     -e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
+#     -e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
+#     -e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
+#     "$ENV_FILE_PATH"
+#     else
+#     echo "$ENV_FILE_PATH not found."
+#     fi
+
+#     sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+#     -a fetch-config \
+#     -m ec2 \
+#     -c file:/opt/csye6225/webapp/cloudwatch-config.json \
+#     -s
+#     sudo systemctl restart amazon-cloudwatch-agent""")
+
+# # encode user data script
+# encoded_user_data = base64.b64encode(user_data.encode("utf-8")).decode("utf-8")
+# Create launch template
+launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
+    block_device_mappings=[aws.ec2.LaunchTemplateBlockDeviceMappingArgs(
+        device_name="/dev/xvda",
+        ebs=aws.ec2.LaunchTemplateBlockDeviceMappingEbsArgs(
+            volume_size=20,
+        ),
+    )],
+    iam_instance_profile=aws.ec2.LaunchTemplateIamInstanceProfileArgs(
+        name=test_profile.name,
+    ),
+    name_prefix="asg_launch_template",
+    image_id=my_ami_id, 
+    instance_type=my_instance_type,
+    key_name=key_name, 
+    network_interfaces=[aws.ec2.LaunchTemplateNetworkInterfaceArgs(
+        associate_public_ip_address="true",
+        subnet_id=public_subnets[0].id, 
+        security_groups=[web_app_security_group.id], 
+    )],
     tags={
-        "Name": "my-ami-instance",  # Provide a name for your instance
+        "Name": "my-launch-template",  
     },
-    user_data=pulumi.Output.all(endpoint=rds_instance.endpoint
+    # user_data = encoded_user_data
+    user_data=pulumi.Output.secret(pulumi.Output.all(endpoint=rds_instance.endpoint
     ).apply(
         lambda args: f"""#!/bin/bash
-NEW_DB_USER={username}
-NEW_DB_PASSWORD={password}
-NEW_DB_HOST={args["endpoint"].split(":")[0]}
-NEW_DB_NAME={db_name}
-ENV_FILE_PATH={env_file_path}
+    NEW_DB_USER={username}
+    NEW_DB_PASSWORD={password}
+    NEW_DB_HOST={args["endpoint"].split(":")[0]}
+    NEW_DB_NAME={db_name}
+    ENV_FILE_PATH={env_file_path}
 
-if [ -e "$ENV_FILE_PATH" ]; then
-sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
--e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
--e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
--e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
-"$ENV_FILE_PATH"
-else
-echo "$ENV_FILE_PATH not found."
-fi
+    if [ -e "$ENV_FILE_PATH" ]; then
+    sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
+    -e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
+    -e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
+    -e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
+    "$ENV_FILE_PATH"
+    else
+    echo "$ENV_FILE_PATH not found."
+    fi
 
-sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
--a fetch-config \
--m ec2 \
--c file:/opt/csye6225/webapp/cloudwatch-config.json \
--s
-sudo systemctl restart amazon-cloudwatch-agent"""),
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -c file:/opt/csye6225/webapp/cloudwatch-config.json \
+    -s
+    sudo systemctl restart amazon-cloudwatch-agent""").apply(lambda x: base64.b64encode(x.encode("utf-8")).decode("utf-8")))
+
+    )
+
+#autoscaling group
+autoscaling_group = aws.autoscaling.Group("asg_launch_config",
+    default_cooldown= 60,
+    desired_capacity=1,
+    max_size=3,
+    min_size=1,
+    health_check_type = 'ELB',
+    launch_template=aws.autoscaling.GroupLaunchTemplateArgs(
+        id=launch_template_autoscaling.id,
+        version="$Latest",
+    ))
+
+#scale up autoscaling policy
+scale_up_policy = aws.autoscaling.Policy("scale_up_policy",
+    scaling_adjustment=1,
+    adjustment_type="ChangeInCapacity",
+    cooldown=300,
+    autoscaling_group_name=autoscaling_group.name,
+    policy_type = "SimpleScaling")
+
+# Attach the scale-up policy to the CloudWatch alarm based on CPU usage
+cpu_utilization_alarm_scale_up = aws.cloudwatch.MetricAlarm("cpuUtilizationAlarmScaleUp",
+    comparison_operator="GreaterThanThreshold",
+    evaluation_periods=1,
+    metric_name="CPUUtilization",
+    namespace="AWS/EC2",
+    period=300,  # Monitoring period in seconds
+    statistic="Average",
+    threshold=5,  # Above 5%
+    alarm_actions=[scale_up_policy.arn],
+    dimensions={
+        "AutoScalingGroupName": autoscaling_group.name,
+    },
 )
+
+#scale down autoscaling policy
+scale_down_policy = aws.autoscaling.Policy("scale_dowm_policy",
+    scaling_adjustment= -1,
+    adjustment_type="ChangeInCapacity",
+    cooldown=300,
+    autoscaling_group_name=autoscaling_group.name,
+    policy_type = "SimpleScaling")
+
+# Attach the scale-up policy to the CloudWatch alarm based on CPU usage
+cpu_utilization_alarm_scale_down = aws.cloudwatch.MetricAlarm("cpuUtilizationAlarmScaleDown",
+    comparison_operator="LessThanThreshold",
+    evaluation_periods=1,
+    metric_name="CPUUtilization",
+    namespace="AWS/EC2",
+    period=300,  # Monitoring period in seconds
+    statistic="Average",
+    threshold=3,  # Less than 3%
+    alarm_actions=[scale_down_policy.arn],
+    dimensions={
+        "AutoScalingGroupName": autoscaling_group.name,
+    },
+)
+
+#Load balancer
+load_balancer = aws.lb.LoadBalancer("load_balancer",
+    name='myLoadBalancer',
+    internal=False,
+    load_balancer_type="application",
+    security_groups=[load_balancer_security_group.id],
+    subnets=[subnet.id for subnet in public_subnets],
+    tags={
+        "Environment": "production",
+    })
+
+#Target group
+target_group = aws.lb.TargetGroup("target_group",
+    name = 'myTargetGroup',
+    port=3000,
+    protocol="HTTP",
+    vpc_id=b_vpc.id,
+    health_check={
+        "enabled": True,
+        "path": "/healthz", 
+        "protocol": "HTTP",
+        "port": 3000,
+    })
+
+# Create a listener for the load balancer
+listener = aws.lb.Listener("myListener",
+    load_balancer_arn=load_balancer.arn,
+    port=80,
+    default_actions=[{
+        "type": "forward",
+        "target_group_arn": target_group.arn,
+    }],
+)
+
+#attaching autoscaling to alb
+alb_attachment = aws.autoscaling.Attachment("alb_attachment",
+    autoscaling_group_name=autoscaling_group.id,
+    lb_target_group_arn=target_group.arn)
+
+# # Create an EC2 instance
+# ec2_instance = ec2.Instance(
+#     "My-Ami-Instance",
+#     ami=my_ami_id,
+#     instance_type=my_instance_type,  # Choose the appropriate instance type
+#     subnet_id=public_subnets[0].id,  # Replace with the desired subnet ID
+#     security_groups=[web_app_security_group.id],  # Attach the security group
+#     associate_public_ip_address=True,
+#     key_name=key_name,
+#     iam_instance_profile = test_profile.name,
+#     root_block_device={
+#         "volume_size": 25,
+#         "volume_type": "gp2",  
+#         "delete_on_termination": True,
+#     },
+#     tags={
+#         "Name": "my-ami-instance",  # Provide a name for your instance
+#     },
+#     user_data=pulumi.Output.all(endpoint=rds_instance.endpoint
+#     ).apply(
+#         lambda args: f"""#!/bin/bash
+# NEW_DB_USER={username}
+# NEW_DB_PASSWORD={password}
+# NEW_DB_HOST={args["endpoint"].split(":")[0]}
+# NEW_DB_NAME={db_name}
+# ENV_FILE_PATH={env_file_path}
+
+# if [ -e "$ENV_FILE_PATH" ]; then
+# sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
+# -e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
+# -e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
+# -e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
+# "$ENV_FILE_PATH"
+# else
+# echo "$ENV_FILE_PATH not found."
+# fi
+
+# sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+# -a fetch-config \
+# -m ec2 \
+# -c file:/opt/csye6225/webapp/cloudwatch-config.json \
+# -s
+# sudo systemctl restart amazon-cloudwatch-agent"""),
+# )
 
 www = aws.route53.Record("www",
     zone_id=zone_id,
     name=domain_name,
     type="A",
-    ttl=60,
-    records=[ec2_instance.public_ip])
+    aliases=[aws.route53.RecordAliasArgs(
+        name=load_balancer.dns_name,
+        zone_id=load_balancer.zone_id,
+        evaluate_target_health=True,
+    )])
 
