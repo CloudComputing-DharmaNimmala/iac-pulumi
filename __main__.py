@@ -294,6 +294,8 @@ launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
         device_name="/dev/xvda",
         ebs=aws.ec2.LaunchTemplateBlockDeviceMappingEbsArgs(
             volume_size=20,
+            volume_type = "gp2",
+            delete_on_termination = True
         ),
     )],
     iam_instance_profile=aws.ec2.LaunchTemplateIamInstanceProfileArgs(
@@ -346,23 +348,30 @@ autoscaling_group = aws.autoscaling.Group("asg_launch_config",
     desired_capacity=1,
     max_size=3,
     min_size=1,
-    health_check_type = 'ELB',
+    health_check_type = "ELB",
+    vpc_zone_identifiers = [subnet.id for subnet in public_subnets],
     launch_template=aws.autoscaling.GroupLaunchTemplateArgs(
         id=launch_template_autoscaling.id,
-        version="$Latest",
-    ))
+        version="$Latest"),
+        tags=[
+        aws.autoscaling.GroupTagArgs(
+            key='Name',
+            value='Webapp Server',
+            propagate_at_launch=True,
+        )
+    ])
 
 #scale up autoscaling policy
 scale_up_policy = aws.autoscaling.Policy("scale_up_policy",
     scaling_adjustment=1,
     adjustment_type="ChangeInCapacity",
-    cooldown=300,
+    cooldown=60,
     autoscaling_group_name=autoscaling_group.name,
     policy_type = "SimpleScaling")
 
 # Attach the scale-up policy to the CloudWatch alarm based on CPU usage
 cpu_utilization_alarm_scale_up = aws.cloudwatch.MetricAlarm("cpuUtilizationAlarmScaleUp",
-    comparison_operator="GreaterThanThreshold",
+    comparison_operator="GreaterThanOrEqualToThreshold",
     evaluation_periods=1,
     metric_name="CPUUtilization",
     namespace="AWS/EC2",
@@ -379,13 +388,13 @@ cpu_utilization_alarm_scale_up = aws.cloudwatch.MetricAlarm("cpuUtilizationAlarm
 scale_down_policy = aws.autoscaling.Policy("scale_dowm_policy",
     scaling_adjustment= -1,
     adjustment_type="ChangeInCapacity",
-    cooldown=300,
+    cooldown=60,
     autoscaling_group_name=autoscaling_group.name,
     policy_type = "SimpleScaling")
 
 # Attach the scale-up policy to the CloudWatch alarm based on CPU usage
 cpu_utilization_alarm_scale_down = aws.cloudwatch.MetricAlarm("cpuUtilizationAlarmScaleDown",
-    comparison_operator="LessThanThreshold",
+    comparison_operator="LessThanOrEqualToThreshold",
     evaluation_periods=1,
     metric_name="CPUUtilization",
     namespace="AWS/EC2",
@@ -426,6 +435,7 @@ target_group = aws.lb.TargetGroup("target_group",
 listener = aws.lb.Listener("myListener",
     load_balancer_arn=load_balancer.arn,
     port=80,
+    protocol = 'HTTP',
     default_actions=[{
         "type": "forward",
         "target_group_arn": target_group.arn,
