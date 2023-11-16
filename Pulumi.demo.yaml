@@ -24,7 +24,7 @@ config:
   app_port_cidr_block: ["0.0.0.0/0"]
   app_port: 3000
   key_name: "demo-west1"
-  my_ami_id: "ami-0c4bb17162fe70ef1"
+  my_ami_id: "ami-0155280b3c82c6277"
   instance_type: "t2.micro"
   egress_traffic: "0.0.0.0/0"
   identifier: "csye6225"
