@@ -1,9 +1,11 @@
 import pulumi
 from pulumi_aws import ec2
 import pulumi_aws as aws
+import pulumi_gcp as gcp
 import base64
  
 config = pulumi.Config()
+aws_region =config.require('aws_region')
 public_subnet_config =config.require_object('public_subnet_configs')
 private_subnet_config =config.require_object('private_subnet_configs')
 dest_cidr = config.require('destination_cidr')
@@ -31,6 +33,36 @@ instance_class = config.require('instance_class')
 env_file_path = config.require('env_file_path')
 zone_id = config.require('zone_id')
 domain_name = config.require('domain_name')
+
+
+# Create a Google Cloud Storage bucket
+bucket = gcp.storage.Bucket('gcp-bucket', 
+    versioning={
+        'enabled': True
+    },
+    storage_class='STANDARD',
+    public_access_prevention="enforced",
+    name="nimmalabucket2",
+    location="US",
+    force_destroy = True
+)
+
+# Create a Google Service Account
+service_account = gcp.serviceaccount.Account('gcp-service-account',
+    account_id='service-account-2',
+    display_name='Gcp lambda service account'
+)
+bucket_iam = gcp.storage.BucketIAMMember("bucketIAMMember",
+    bucket=bucket.name,
+    role="roles/storage.objectAdmin",
+    member=pulumi.Output.concat("serviceAccount:", service_account.email))
+
+# Create Access Keys for the Service Account
+keys = gcp.serviceaccount.Key('gcp-service-account-key',
+    service_account_id=service_account.name,
+    public_key_type="TYPE_X509_PEM_FILE",
+    private_key_type="TYPE_GOOGLE_CREDENTIALS_FILE"
+)
 
 #creating VPC
 b_vpc = ec2.Vpc('main_vpc', 
@@ -115,6 +147,96 @@ for n,subnet in enumerate(private_subnets):
                              route_table_id=private_route_table.id,
                              subnet_id=subnet.id)
     
+topic = aws.sns.Topic("sns-topic-1",
+    display_name = 'SNS topic'
+)
+# dynamodb_table = aws.dynamodb.Table("dynamodb-table",
+#     name = 'testtable',
+#     attributes=[
+#         aws.dynamodb.TableAttributeArgs(
+#             name="UserEmail",
+#             type="S",
+#         )
+#     ],
+#     billing_mode="PROVISIONED",
+#     hash_key="UserEmail",
+#     read_capacity=20,
+#     tags={
+#         "Environment": "dev",
+#         "Name": "testtable",
+#     },
+#     write_capacity=20)
+
+dynamodb_table = aws.dynamodb.Table("dynamodb-table",
+    name = 'testtable',
+    attributes=[
+        aws.dynamodb.TableAttributeArgs(
+            name="UserEmail",
+            type="S",
+        ),
+        aws.dynamodb.TableAttributeArgs(
+            name="Timestamp",
+            type="S",
+        )
+    ],
+    billing_mode="PROVISIONED",
+    hash_key="UserEmail",
+    range_key="Timestamp",
+    read_capacity=20,
+    tags={
+        "Environment": "dev",
+        "Name": "testtable",
+    },
+    write_capacity=20)
+
+iam_for_lambda = aws.iam.Role("my-iam-role",
+    assume_role_policy="""{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "lambda.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            }
+        ]
+    }""")
+
+role_policy_attachment_dynamodb = aws.iam.RolePolicyAttachment("my-iam-role-policy",
+    policy_arn="arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
+    role=iam_for_lambda.name)
+role_policy_attachment_lambda = aws.iam.RolePolicyAttachment('lambdaRolePolicy',
+    role=iam_for_lambda.name,
+    policy_arn='arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+)
+
+testLambda = aws.lambda_.Function("testLambda",
+    code=pulumi.FileArchive("./../serverless/Archive.zip"),
+    role=iam_for_lambda.arn,
+    handler="index.handler",
+    runtime="nodejs20.x",
+    timeout=60,
+    environment=aws.lambda_.FunctionEnvironmentArgs(
+        variables={
+            "GCS_BUCKET_NAME": bucket.name,
+            "MAILGUN_API_KEY": "680e8f7f873072a6c4ca1d5d15deced4-30b58138-c475eb19",
+            "MAILGUN_DOMAIN": "mynscc.me",
+            "GCP_KEY": keys.private_key,
+            "DYNAMODB_NAME": dynamodb_table.name
+        },
+    ))
+
+with_sns = aws.lambda_.Permission("withSns",
+    action="lambda:InvokeFunction",
+    function=testLambda.name,
+    principal="sns.amazonaws.com",
+    source_arn=topic.arn)
+lambda_sns_subscription = aws.sns.TopicSubscription("lambda-sns-subscription",
+    topic=topic.arn,
+    protocol="lambda",
+    endpoint=testLambda.arn)
+
 #load-balancer security group
 load_balancer_security_group = ec2.SecurityGroup('load_balancer-sg',
     description="Load Balancer Security Group",
@@ -194,7 +316,7 @@ database_security_group = ec2.SecurityGroup('database-sg',
 
 
 #create rds parameter group
-db_parameter_group = aws.rds.ParameterGroup("mariadb_parameter_group",
+db_parameter_group = aws.rds.ParameterGroup("mariadb_parameter_group_1",
     family="mariadb10.6",
     parameters=[
         aws.rds.ParameterGroupParameterArgs(
@@ -258,36 +380,13 @@ cloudwatch_agent_server_policy_attachment = aws.iam.PolicyAttachment(
     roles=[cloudwatch_agent_server_role.name],
 )
 
+SNSPolicyAttachment = aws.iam.PolicyAttachment("SNSPolicyAttachment",
+    policy_arn= "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+    roles= [cloudwatch_agent_server_role.name],
+)
+
 test_profile = aws.iam.InstanceProfile("testProfile", role=cloudwatch_agent_server_role.name)
 
-# user_data = pulumi.Output.all(endpoint=rds_instance.endpoint
-#     ).apply(
-#         lambda args: f"""#!/bin/bash
-#     NEW_DB_USER={username}
-#     NEW_DB_PASSWORD={password}
-#     NEW_DB_HOST={args["endpoint"].split(":")[0]}
-#     NEW_DB_NAME={db_name}
-#     ENV_FILE_PATH={env_file_path}
-
-#     if [ -e "$ENV_FILE_PATH" ]; then
-#     sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
-#     -e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
-#     -e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
-#     -e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
-#     "$ENV_FILE_PATH"
-#     else
-#     echo "$ENV_FILE_PATH not found."
-#     fi
-
-#     sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-#     -a fetch-config \
-#     -m ec2 \
-#     -c file:/opt/csye6225/webapp/cloudwatch-config.json \
-#     -s
-#     sudo systemctl restart amazon-cloudwatch-agent""")
-
-# # encode user data script
-# encoded_user_data = base64.b64encode(user_data.encode("utf-8")).decode("utf-8")
 # Create launch template
 launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
     block_device_mappings=[aws.ec2.LaunchTemplateBlockDeviceMappingArgs(
@@ -314,7 +413,8 @@ launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
         "Name": "my-launch-template",  
     },
     # user_data = encoded_user_data
-    user_data=pulumi.Output.secret(pulumi.Output.all(endpoint=rds_instance.endpoint
+    user_data=pulumi.Output.secret(pulumi.Output.all(endpoint=rds_instance.endpoint, 
+    sns_arn = topic.arn
     ).apply(
         lambda args: f"""#!/bin/bash
     NEW_DB_USER={username}
@@ -322,12 +422,16 @@ launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
     NEW_DB_HOST={args["endpoint"].split(":")[0]}
     NEW_DB_NAME={db_name}
     ENV_FILE_PATH={env_file_path}
+    NEW_SNS_TOPIC_ARN={args["sns_arn"]}
+    NEW_AWS_REGION={aws_region}
 
     if [ -e "$ENV_FILE_PATH" ]; then
     sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
     -e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
     -e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
     -e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
+    -e "s/SNS_TOPIC_ARN=.*/SNS_TOPIC_ARN=$NEW_SNS_TOPIC_ARN/" \
+    -e "s/AWS_REGION=.*/AWS_REGION=$NEW_AWS_REGION/" \
     "$ENV_FILE_PATH"
     else
     echo "$ENV_FILE_PATH not found."
@@ -447,50 +551,6 @@ alb_attachment = aws.autoscaling.Attachment("alb_attachment",
     autoscaling_group_name=autoscaling_group.id,
     lb_target_group_arn=target_group.arn)
 
-# # Create an EC2 instance
-# ec2_instance = ec2.Instance(
-#     "My-Ami-Instance",
-#     ami=my_ami_id,
-#     instance_type=my_instance_type,  # Choose the appropriate instance type
-#     subnet_id=public_subnets[0].id,  # Replace with the desired subnet ID
-#     security_groups=[web_app_security_group.id],  # Attach the security group
-#     associate_public_ip_address=True,
-#     key_name=key_name,
-#     iam_instance_profile = test_profile.name,
-#     root_block_device={
-#         "volume_size": 25,
-#         "volume_type": "gp2",  
-#         "delete_on_termination": True,
-#     },
-#     tags={
-#         "Name": "my-ami-instance",  # Provide a name for your instance
-#     },
-#     user_data=pulumi.Output.all(endpoint=rds_instance.endpoint
-#     ).apply(
-#         lambda args: f"""#!/bin/bash
-# NEW_DB_USER={username}
-# NEW_DB_PASSWORD={password}
-# NEW_DB_HOST={args["endpoint"].split(":")[0]}
-# NEW_DB_NAME={db_name}
-# ENV_FILE_PATH={env_file_path}
-
-# if [ -e "$ENV_FILE_PATH" ]; then
-# sed -i -e "s/DB_HOST=.*/DB_HOST=$NEW_DB_HOST/" \
-# -e "s/DB_USER=.*/DB_USER=$NEW_DB_USER/" \
-# -e "s/DB_PASSWORD=.*/DB_PASSWORD=$NEW_DB_PASSWORD/" \
-# -e "s/DB_NAME=.*/DB_NAME=$NEW_DB_NAME/" \
-# "$ENV_FILE_PATH"
-# else
-# echo "$ENV_FILE_PATH not found."
-# fi
-
-# sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-# -a fetch-config \
-# -m ec2 \
-# -c file:/opt/csye6225/webapp/cloudwatch-config.json \
-# -s
-# sudo systemctl restart amazon-cloudwatch-agent"""),
-# )
 
 www = aws.route53.Record("www",
     zone_id=zone_id,
@@ -501,4 +561,6 @@ www = aws.route53.Record("www",
         zone_id=load_balancer.zone_id,
         evaluate_target_health=True,
     )])
+
+
 
