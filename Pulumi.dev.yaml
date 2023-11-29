@@ -2,39 +2,49 @@ encryptionsalt: v1:A3Pah0qCaqo=:v1:wo7YPdqDBJZ6Q7GY:5KRgngsP4W4EMcv++NN5HnKTBD5p
 config:
   aws:profile: dev
   aws:region: us-west-1
-  main_vpc_cider_block: 10.0.0.0/16
-  main_vpc_name: main-vpc
-  main_igw_name: main-igw
-  public_subnet_configs : [
-    {"name": "public-subnet-1", "cidr_block": "10.0.0.0/24"},
-    {"name": "public-subnet-2", "cidr_block": "10.0.1.0/24"},
-    {"name": "public-subnet-3", "cidr_block": "10.0.2.0/24"},
-    ]
-  private_subnet_configs: [
-    {"name": "private-subnet-1", "cidr_block": "10.0.3.0/24"},
-    {"name": "private-subnet-2", "cidr_block": "10.0.4.0/24"},
-    {"name": "private-subnet-3", "cidr_block": "10.0.5.0/24"},
-  ]
-  public_route_table_name: public-route-table
-  private_route_table_name: private-route-table
-  destination_cidr: "0.0.0.0/0"
-  ssh_cidr_block: ["73.218.147.89/32"]
-  http_cidr_block: ["0.0.0.0/0"]
-  https_cidr_block: ["0.0.0.0/0"]
-  app_port_cidr_block: ["0.0.0.0/0"]
-  app_port: 3000
-  key_name: "dev-us-west1"
-  my_ami_id: "ami-0155280b3c82c6277"
-  instance_type: "t2.micro"
-  egress_traffic: "0.0.0.0/0"
-  identifier: "csye6225"
-  username: "csye6225"
-  password: "password"
-  allocated_storage: 20
-  db_name: "csye6225"
-  engine: "mariadb"
-  engine_version: "10.6"
-  instance_class: "db.t2.micro"
-  env_file_path : "/opt/csye6225/webapp/.env"
-  zone_id : "Z04150102IC2RTE0VG6Y3"
-  domain_name : "dev.mynscc.me"
+  gcp:project: dev-project-406605
+  iac-pulumi:aws_region: "us-west-1"
+  iac-pulumi:allocated_storage: "20"
+  iac-pulumi:app_port: "3000"
+  iac-pulumi:app_port_cidr_block:
+    - 0.0.0.0/0
+  iac-pulumi:db_name: csye6225
+  iac-pulumi:destination_cidr: 0.0.0.0/0
+  iac-pulumi:domain_name: dev.mynscc.me
+  iac-pulumi:egress_traffic: 0.0.0.0/0
+  iac-pulumi:engine: mariadb
+  iac-pulumi:engine_version: "10.6"
+  iac-pulumi:env_file_path: /opt/csye6225/webapp/.env
+  iac-pulumi:http_cidr_block:
+    - 0.0.0.0/0
+  iac-pulumi:https_cidr_block:
+    - 0.0.0.0/0
+  iac-pulumi:identifier: csye6225
+  iac-pulumi:instance_class: db.t2.micro
+  iac-pulumi:instance_type: t2.micro
+  iac-pulumi:key_name: dev-us-west1
+  iac-pulumi:main_igw_name: main-igw
+  iac-pulumi:main_vpc_cider_block: 10.0.0.0/16
+  iac-pulumi:main_vpc_name: main-vpc
+  iac-pulumi:my_ami_id: ami-0e0322d124ba18022
+  iac-pulumi:password: password
+  iac-pulumi:private_route_table_name: private-route-table
+  iac-pulumi:private_subnet_configs:
+    - cidr_block: 10.0.3.0/24
+      name: private-subnet-1
+    - cidr_block: 10.0.4.0/24
+      name: private-subnet-2
+    - cidr_block: 10.0.5.0/24
+      name: private-subnet-3
+  iac-pulumi:public_route_table_name: public-route-table
+  iac-pulumi:public_subnet_configs:
+    - cidr_block: 10.0.0.0/24
+      name: public-subnet-1
+    - cidr_block: 10.0.1.0/24
+      name: public-subnet-2
+    - cidr_block: 10.0.2.0/24
+      name: public-subnet-3
+  iac-pulumi:ssh_cidr_block:
+    - 73.218.147.89/32
+  iac-pulumi:username: csye6225
+  iac-pulumi:zone_id: Z04150102IC2RTE0VG6Y3
