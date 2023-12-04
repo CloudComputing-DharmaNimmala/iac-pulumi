@@ -32,4 +32,8 @@ pulumi up
 ```
 pulumi destroy
 ```
+### Import SSL Certificate from Namecheap AWS Certificate Manager using AWS CLI
+```
+aws acm import-certificate --profile demo --certificate fileb://demo_mynscc_me.crt --certificate-chain fileb://demo_mynscc_me.ca-bundle --private-key fileb://private.key --region us-west-1
+```
 
