@@ -26,7 +26,7 @@ config:
   iac-pulumi:main_igw_name: main-igw
   iac-pulumi:main_vpc_cider_block: 10.0.0.0/16
   iac-pulumi:main_vpc_name: main-vpc
-  iac-pulumi:my_ami_id: ami-04c3ef157b1485784
+  iac-pulumi:my_ami_id: ami-0aafdae616ee7c9b7
   iac-pulumi:password: password
   iac-pulumi:private_route_table_name: private-route-table
   iac-pulumi:private_subnet_configs:
