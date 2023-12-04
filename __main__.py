@@ -244,12 +244,6 @@ load_balancer_security_group = ec2.SecurityGroup('load_balancer-sg',
     ingress=[
         {
             'protocol': 'tcp',
-            'from_port': 80,
-            'to_port': 80,
-            'cidr_blocks': http_cidr_block,
-        },
-        {
-            'protocol': 'tcp',
             'from_port': 443,
             'to_port': 443,
             'cidr_blocks': http_cidr_block,
@@ -389,6 +383,7 @@ test_profile = aws.iam.InstanceProfile("testProfile", role=cloudwatch_agent_serv
 
 # Create launch template
 launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
+    name="my-launch-template",
     block_device_mappings=[aws.ec2.LaunchTemplateBlockDeviceMappingArgs(
         device_name="/dev/xvda",
         ebs=aws.ec2.LaunchTemplateBlockDeviceMappingEbsArgs(
@@ -400,7 +395,6 @@ launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
     iam_instance_profile=aws.ec2.LaunchTemplateIamInstanceProfileArgs(
         name=test_profile.name,
     ),
-    name_prefix="asg_launch_template",
     image_id=my_ami_id, 
     instance_type=my_instance_type,
     key_name=key_name, 
@@ -448,6 +442,7 @@ launch_template_autoscaling = aws.ec2.LaunchTemplate("asg_launch_template",
 
 #autoscaling group
 autoscaling_group = aws.autoscaling.Group("asg_launch_config",
+    name = "my-autoscaling-group",
     default_cooldown= 60,
     desired_capacity=1,
     max_size=3,
@@ -535,15 +530,19 @@ target_group = aws.lb.TargetGroup("target_group",
         "port": 3000,
     })
 
+ssl_certificate_arn = aws.acm.get_certificate(domain=domain_name,
+    statuses=["ISSUED"])
+
 # Create a listener for the load balancer
 listener = aws.lb.Listener("myListener",
     load_balancer_arn=load_balancer.arn,
-    port=80,
-    protocol = 'HTTP',
+    port=443,
+    protocol = 'HTTPS',
     default_actions=[{
         "type": "forward",
         "target_group_arn": target_group.arn,
     }],
+    certificate_arn=ssl_certificate_arn.arn
 )
 
 #attaching autoscaling to alb
